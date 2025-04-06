@@ -1,61 +1,12 @@
-const audioElement = document.getElementById('background-music');
-let isPlaying = false;
-let userInteracted = false; // Track if user has interacted (for autoplay policy)
+// --- START OF FILE audio.js ---
 
-export function initAudio() {
-    // Browsers often block autoplay until user interaction
-    document.body.addEventListener('click', () => {
-        userInteracted = true;
-    }, { once: true }); // Remove listener after first click
+const audioElement=document.getElementById('background-music');let isPlaying=false,userInteracted=false;
+export function initAudio(){document.body.addEventListener('click',handleUserInteraction,{once:true});document.body.addEventListener('touchend',handleUserInteraction,{once:true});if(audioElement){isPlaying=!audioElement.paused;}else{console.error("Audio element missing!");}}
+function handleUserInteraction(){console.log("User interaction detected.");userInteracted=true;}
+export function toggleMusic(){if(!audioElement)return;if(!userInteracted){console.log("Audio Interaction Needed.");return;} if(isPlaying){audioElement.pause();updateMusicButtonUI(false);console.log("Music Paused");}else{audioElement.play().then(()=>{updateMusicButtonUI(true);console.log("Music Playing");}).catch(error=>{console.error("Audio playback failed:",error);updateMusicButtonUI(false);});}}
+export function playMusic(){if(!isPlaying&&userInteracted&&audioElement)toggleMusic();}
+export function pauseMusic(){if(isPlaying&&audioElement)toggleMusic();}
+export function updateMusicButtonUI(playing){isPlaying=playing;} // Relies on ui.js for text update
+export function isAudioPlaying(){return isPlaying;}
 
-     // Set initial button text based on paused state (usually true initially)
-     updateMusicButtonUI(audioElement.paused);
-}
-
-export function toggleMusic() {
-    if (!userInteracted) {
-        console.log("Audio cannot play yet. Click somewhere on the page first.");
-         // Optionally show a message to the user
-        return;
-    }
-
-    if (isPlaying) {
-        audioElement.pause();
-        isPlaying = false;
-    } else {
-        audioElement.play().then(() => {
-            isPlaying = true;
-             updateMusicButtonUI(false); // Update UI after successful play
-        }).catch(error => {
-            console.error("Audio playback failed:", error);
-            isPlaying = false; // Ensure state is correct even on failure
-            updateMusicButtonUI(true);
-        });
-    }
-     updateMusicButtonUI(isPlaying); // Update UI immediately for pause
-}
-
-export function playMusic() {
-     if (!isPlaying && userInteracted) {
-         toggleMusic();
-     }
-}
-export function pauseMusic() {
-    if (isPlaying) {
-         toggleMusic();
-    }
-}
-
-
-// Separate function to update UI - called from game.js or main.js
-export function updateMusicButtonUI(playing) {
-    // This function needs access to the UI module or the button element directly
-    // Let's assume ui.js exports a function for this
-    // import { updateMusicButtonText } from './ui.js'; // Import in the calling module (e.g., main.js)
-    // updateMusicButtonText(playing); // Call the UI update function
-    isPlaying = playing; // Keep internal state synced
-}
-
-export function isAudioPlaying() {
-    return isPlaying;
-}
+// --- END OF FILE audio.js ---

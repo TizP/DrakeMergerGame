@@ -1,325 +1,59 @@
 // --- START OF FILE ui.js ---
 
-// Import necessary items from config (DRAKE_LEVELS needed for highest display name)
-import { GRID_ROWS, GRID_COLS, BASE_DRAKE_COST, DRAKE_LEVELS, RARITY_LEVELS } from './config.js';
+import { GRID_ROWS, GRID_COLS, BASE_DRAKE_COST, DRAKE_LEVELS, COMBAT_TEAM_SIZE } from './config.js';
 
 // --- Element References ---
-const resourceCountEl = document.getElementById('resource-count');
-const highestDrakeEl = document.getElementById('highest-drake');
-const gameGridEl = document.getElementById('game-grid');
-const buyDrakeBtn = document.getElementById('buy-drake-btn');
-const buyCostSpan = document.getElementById('buy-cost');
-const messageBoxEl = document.getElementById('message-box');
-const musicToggleBtn = document.getElementById('music-toggle-btn');
-// Add reference for the details panel (will be null until added to HTML)
-const drakeDetailsPanel = document.getElementById('drake-details-panel'); // Will be null until added to HTML
+const resourceCountEl=document.getElementById('resource-count'),essenceCountEl=document.getElementById('essence-count'),shardsCountEl=document.getElementById('shards-count'),highestDrakeEl=document.getElementById('highest-drake'),gameGridEl=document.getElementById('game-grid'),buyDrakeBtn=document.getElementById('buy-drake-btn'),buyCostSpan=document.getElementById('buy-cost'),messageBoxEl=document.getElementById('message-box'),musicToggleBtn=document.getElementById('music-toggle-btn'),drakeDetailsPanel=document.getElementById('drake-details-panel'),combatArenaPanel=document.getElementById('combat-arena-panel'),tutorialBox=document.getElementById('tutorial-box'),creditsBox=document.getElementById('credits-box'),openCombatBtn=document.getElementById('open-combat-btn'),combatArenaCloseBtn=document.getElementById('combat-arena-close-btn'),combatStartStopBtn=document.getElementById('combat-start-stop-btn'),tutorialCloseBtn=document.getElementById('tutorial-close-btn'),creditsCloseBtn=document.getElementById('credits-close-btn'),detailsCloseBtn=document.getElementById('drake-details-close-btn'),combatTeamSlotsContainer=document.getElementById('combat-team-slots'),combatWaveNumEl=document.getElementById('combat-wave-num'),combatEnemyImageEl=document.getElementById('combat-enemy-image'),combatEnemyNameEl=document.getElementById('combat-enemy-name'),combatEnemyHpCurrentEl=document.getElementById('combat-enemy-hp-current'),combatEnemyHpMaxEl=document.getElementById('combat-enemy-hp-max'),combatEnemyHpBarEl=document.getElementById('combat-enemy-hp-bar'),combatMessagesEl=document.getElementById('combat-messages');
 
 // --- State & Handler Storage ---
-let draggedDrakeElement = null;
-let draggedDrakeIndex = -1;
-
-let _buyClickHandler;
-let _dragStartHandler;
-let _dragEndHandler;
-let _dropHandler;
-let _dragOverHandler;
-let _dragLeaveHandler;
-let _drakeClickHandler; // Handler for clicking a drake
+let draggedDrakeElement=null,draggedDrakeIndex=-1,draggedDrakeId=null,messageTimeout=null;
+let _buyClickHandler,_dragStartHandler,_dragEndHandler,_dropHandler,_drakeClickHandler,_toggleCombatHandler,_removeDrakeFromCombatHandler;
 
 // --- Initialization ---
-export function initUI(
-    buyClickHandler, dragStartHandler, dragEndHandler,
-    dropHandler, dragOverHandler, dragLeaveHandler,
-    drakeClickHandler // Add the new handler parameter
-) {
-    // Store handlers
-    _buyClickHandler = buyClickHandler;
-    _dragStartHandler = dragStartHandler;
-    _dragEndHandler = dragEndHandler;
-    _dropHandler = dropHandler;
-    _dragOverHandler = dragOverHandler;
-    _dragLeaveHandler = dragLeaveHandler;
-    _drakeClickHandler = drakeClickHandler; // Store the click handler
+export function initUI(bh,dsh,deh,dh,doh_ign,dlh_ign,dch,tch,rdfch){_buyClickHandler=bh;_dragStartHandler=dsh;_dragEndHandler=deh;_dropHandler=dh;_drakeClickHandler=dch;_toggleCombatHandler=tch;_removeDrakeFromCombatHandler=rdfch; if(gameGridEl){gameGridEl.innerHTML='';gameGridEl.style.gridTemplateColumns=`repeat(${GRID_COLS},1fr)`;gameGridEl.style.gridTemplateRows=`repeat(${GRID_ROWS},1fr)`;for(let i=0;i<GRID_ROWS*GRID_COLS;i++){const s=document.createElement('div');s.classList.add('grid-slot');s.dataset.index=i;s.addEventListener('dragover',handleDragOverGridOrCombat);s.addEventListener('dragleave',handleDragLeaveGridOrCombat);s.addEventListener('drop',e=>_dropHandler?.(e));s.addEventListener('click',e=>{if(e.target===s)_drakeClickHandler?.(i);});gameGridEl.appendChild(s);}}else{console.error("No Grid!");} renderCombatTeamSlots(Array(COMBAT_TEAM_SIZE).fill(null)); buyDrakeBtn?.addEventListener('click',_buyClickHandler);openCombatBtn?.addEventListener('click',()=>combatArenaPanel?.classList.toggle('hidden'));combatArenaCloseBtn?.addEventListener('click',()=>combatArenaPanel?.classList.add('hidden'));combatStartStopBtn?.addEventListener('click',_toggleCombatHandler);tutorialCloseBtn?.addEventListener('click',()=>tutorialBox?.classList.add('hidden'));creditsCloseBtn?.addEventListener('click',()=>creditsBox?.classList.add('hidden'));detailsCloseBtn?.addEventListener('click',hideDrakeDetails); if(buyCostSpan)buyCostSpan.textContent=BASE_DRAKE_COST;updateBuyButton(0,false);updateResourceDisplay(0);updateEssenceDisplay(0);updateShardsDisplay(0);}
 
-    // Setup Grid visual structure
-    gameGridEl.innerHTML = '';
-    gameGridEl.style.gridTemplateColumns = `repeat(${GRID_COLS}, 1fr)`;
-    gameGridEl.style.gridTemplateRows = `repeat(${GRID_ROWS}, 1fr)`;
+// --- Grid Rendering ---
+export function renderGrid(gridSlots){if(!gameGridEl)return;const slotEls=gameGridEl.querySelectorAll('.grid-slot');slotEls.forEach((slotEl,index)=>{const dData=gridSlots?.[index];slotEl.innerHTML='';if(dData){const dEl=document.createElement('div');dEl.classList.add('drake',dData.rarityClass||'rarity-common');dEl.draggable=true;dEl.dataset.drakeId=dData.id;dEl.dataset.index=index;const imgEl=document.createElement('img');imgEl.src=dData.imageSrc||'images/placeholder.png';imgEl.alt=dData.name||'Drake';imgEl.classList.add('drake-image');imgEl.ondragstart=()=>false;dEl.appendChild(imgEl);const iconEl=document.createElement('span');iconEl.classList.add('drake-element-icon');iconEl.textContent=dData.elementIcon||'?';dEl.appendChild(iconEl);const lvlEl=document.createElement('span');lvlEl.classList.add('drake-level-text');lvlEl.textContent=`Lvl ${dData.level??'?'}`;dEl.appendChild(lvlEl);dEl.addEventListener('dragstart',e=>{draggedDrakeId=dData.id;event.dataTransfer.setData('text/plain',dData.id.toString());event.dataTransfer.effectAllowed='move';_dragStartHandler?.(e,index);});dEl.addEventListener('dragend',e=>{_dragEndHandler?.(e);draggedDrakeId=null;});dEl.addEventListener('click',e=>{e.stopPropagation();_drakeClickHandler?.(index);});slotEl.appendChild(dEl);}});}
 
-    for (let i = 0; i < GRID_ROWS * GRID_COLS; i++) {
-        const slot = document.createElement('div');
-        slot.classList.add('grid-slot');
-        slot.dataset.index = i;
+// --- Combat Team UI Rendering ---
+export function renderCombatTeamSlots(teamData){if(!combatTeamSlotsContainer)return;combatTeamSlotsContainer.innerHTML='';for(let i=0;i<COMBAT_TEAM_SIZE;i++){const slot=document.createElement('div');slot.classList.add('combat-slot');slot.dataset.index=i;const dData=teamData?.[i];if(dData){const cdEl=document.createElement('div');cdEl.classList.add('combat-drake',dData.rarityClass||'rarity-common');if(dData.combatStatus==='fatigued')cdEl.classList.add('fatigued');cdEl.draggable=true;cdEl.dataset.drakeId=dData.id;cdEl.dataset.combatIndex=i;const hpP=(dData.maxHp>0)?Math.max(0,(dData.currentHp/dData.maxHp)*100):0;cdEl.innerHTML=`<img src="${dData.imageSrc||'images/placeholder.png'}" class="combat-drake-image" alt="${dData.name||'?'}"><span class="combat-drake-name">${dData.name||'?'} L${dData.level??'?'}</span><div class="hp-bar-container drake-hp-bar"><div class="hp-bar" style="width:${hpP}%;"></div></div><span class="combat-drake-hp-text">${dData.currentHp??'?'} / ${dData.maxHp??'?'}</span><span class="combat-drake-status">${dData.combatStatus==='fatigued'?'Fatigued':'Active'}</span>`;cdEl.addEventListener('dragstart',e=>{e.stopPropagation();draggedDrakeId=dData.id;event.dataTransfer.setData('text/plain',dData.id.toString());event.dataTransfer.effectAllowed='move';setTimeout(()=>cdEl.classList.add('dragging'),0);});cdEl.addEventListener('dragend',e=>{cdEl.classList.remove('dragging');_dragEndHandler?.(e);draggedDrakeId=null;});cdEl.addEventListener('click',e=>{e.stopPropagation();_removeDrakeFromCombatHandler?.(i);});slot.appendChild(cdEl);}else{slot.innerHTML=`<span class="combat-slot-placeholder">Slot ${i+1}</span>`;} slot.addEventListener('dragover',handleDragOverGridOrCombat);slot.addEventListener('dragleave',handleDragLeaveGridOrCombat);slot.addEventListener('drop',e=>_dropHandler?.(e));combatTeamSlotsContainer.appendChild(slot);}}
 
-        // Drag/Drop listeners for the slot itself
-        slot.addEventListener('dragover', (event) => _dragOverHandler && _dragOverHandler(event));
-        slot.addEventListener('dragleave', (event) => _dragLeaveHandler && _dragLeaveHandler(event));
-        slot.addEventListener('drop', (event) => _dropHandler && _dropHandler(event));
+// --- Update Combat Panel ---
+export function updateCombatPanel(gameState){if(!combatArenaPanel||!gameState)return;if(combatWaveNumEl)combatWaveNumEl.textContent=gameState.currentWave||1;const enemy=gameState.currentEnemy;if(enemy){if(combatEnemyImageEl)combatEnemyImageEl.src=enemy.image||'images/slime.jpeg';if(combatEnemyNameEl)combatEnemyNameEl.textContent=enemy.name||'Enemy';updateEnemyHpBar(enemy.currentHp,enemy.maxHp);}else{if(combatEnemyImageEl)combatEnemyImageEl.src='images/slime.jpeg';if(combatEnemyNameEl)combatEnemyNameEl.textContent='Waiting...';updateEnemyHpBar(0,1);} renderCombatTeamSlots(gameState.combatTeamSlots);updateCombatButton(gameState.isCombatActive);}
+export function updateEnemyHpBar(currentHp,maxHp){if(!combatEnemyHpBarEl||!combatEnemyHpCurrentEl||!combatEnemyHpMaxEl)return;const current=(typeof currentHp==='number')?Math.max(0,currentHp):0;const max=(typeof maxHp==='number'&&maxHp>0)?maxHp:1;const percentage=(current/max)*100;combatEnemyHpBarEl.style.width=`${percentage}%`;combatEnemyHpCurrentEl.textContent=Math.round(current);combatEnemyHpMaxEl.textContent=max;}
 
-        // Add click listener to the slot (to handle clicks on empty slots or potentially deselect)
-        slot.addEventListener('click', (event) => {
-             // Prevent triggering if clicking on a drake *inside* the slot
-            if (event.target === slot && typeof _drakeClickHandler === 'function') {
-                _drakeClickHandler(i); // Pass index, game logic knows it's empty
-            }
-        });
+// --- Show Combat Messages ---
+export function showCombatMessages(logEntries){if(!combatMessagesEl||!Array.isArray(logEntries))return;logEntries.forEach(entry=>{if(!entry?.type)return;const msgDiv=document.createElement('div');msgDiv.classList.add('combat-log-entry',`log-${entry.type}`);let message='';switch(entry.type){case'damage':message=`${entry.source||'?'} hits ${entry.target||'?'} for ${entry.value||0} damage.`;if(entry.effective>1.1)message+=` (Strong!)`;if(entry.effective<0.9)message+=` (Weak!)`;break;case'crit':message=`CRIT! ${entry.source||'?'} hits ${entry.target||'?'} for ${entry.value||0} dmg!`;if(entry.effective>1.1)message+=` (Strong!)`;if(entry.effective<0.9)message+=` (Weak!)`;msgDiv.classList.add('crit-text');break;case'enemy_damage':message=`${entry.source||'?'} hits ${entry.target||'?'} for ${entry.value||0} damage.`;break;case'dodge':message=`${entry.target||'?'} dodges!`;break;case'fatigue':message=`${entry.target||'?'} fatigued!`;msgDiv.classList.add('fatigue-text');break;case'victory':message=`VICTORY! ${entry.message||(entry.target?`${entry.target} defeated!`:'')}`;msgDiv.classList.add('victory-text');break;case'defeat':message=`DEFEAT! ${entry.message||'Team fatigued!'}`;msgDiv.classList.add('defeat-text');break;case'reward':message=`+${entry.essence||0} Essence, +${entry.shards||0} Shards.`;break;default:message=entry.message||'Event.';} msgDiv.textContent=message;combatMessagesEl.appendChild(msgDiv);});combatMessagesEl.scrollTop=combatMessagesEl.scrollHeight;clearTimeout(messageTimeout);messageTimeout=setTimeout(()=>{if(combatMessagesEl)combatMessagesEl.innerHTML='';},8000);}
 
-        gameGridEl.appendChild(slot);
-    }
-
-    // Attach listener to the Buy button
-    if (buyDrakeBtn) buyDrakeBtn.addEventListener('click', _buyClickHandler);
-
-    // Update initial UI state
-    if (buyCostSpan) buyCostSpan.textContent = BASE_DRAKE_COST;
-    updateBuyButton(0, false);
-
-    // Add listener for closing the details panel (assuming a close button exists in HTML)
-     const detailsCloseBtn = document.getElementById('drake-details-close-btn');
-     if(detailsCloseBtn) {
-        detailsCloseBtn.addEventListener('click', hideDrakeDetails);
-     } else {
-         // This might log initially until the details panel HTML is fully added/styled
-         // console.warn("Drake details close button not found during init.");
-     }
-}
-
-// --- Grid Rendering (V2) ---
-export function renderGrid(gridSlots) {
-    const slotElements = gameGridEl.querySelectorAll('.grid-slot');
-    slotElements.forEach((slotEl, index) => {
-        const drakeData = gridSlots[index];
-        slotEl.innerHTML = ''; // Clear previous content
-
-        if (drakeData) {
-            // Main container for the drake visuals and interactions
-            const drakeEl = document.createElement('div');
-            drakeEl.classList.add('drake');
-            // Add rarity class for styling (e.g., border color)
-            if (drakeData.rarityClass) {
-                drakeEl.classList.add(drakeData.rarityClass);
-            }
-            drakeEl.draggable = true;
-            drakeEl.dataset.drakeId = drakeData.id;
-            drakeEl.dataset.index = index; // Store index directly for click handler
-
-            // --- Visual Elements Inside Drake Container ---
-
-            // 1. Image
-            const imgEl = document.createElement('img');
-            imgEl.src = drakeData.imageSrc || 'images/placeholder.png'; // Fallback image
-            imgEl.alt = drakeData.name || 'Drake';
-            imgEl.classList.add('drake-image');
-            imgEl.ondragstart = () => false; // Prevent default image drag
-            drakeEl.appendChild(imgEl);
-
-            // 2. Element Icon (positioned absolutely)
-            const elementIconEl = document.createElement('span');
-            elementIconEl.classList.add('drake-element-icon');
-            elementIconEl.textContent = drakeData.elementIcon || '?';
-            drakeEl.appendChild(elementIconEl);
-
-            // 3. Level Indicator (positioned absolutely)
-            const levelTextEl = document.createElement('span');
-            levelTextEl.classList.add('drake-level-text');
-            levelTextEl.textContent = `Lvl ${drakeData.level}`;
-            drakeEl.appendChild(levelTextEl);
-
-            // --- Event Listeners for the Drake Element ---
-
-            // Drag Start
-            drakeEl.addEventListener('dragstart', (event) => {
-                 if (typeof _dragStartHandler === 'function') {
-                    _dragStartHandler(event, index);
-                 }
-            });
-
-            // Drag End
-            drakeEl.addEventListener('dragend', (event) => {
-                if(typeof _dragEndHandler === 'function') {
-                    _dragEndHandler(event);
-                }
-            });
-
-            // Click Listener to Show Details
-            drakeEl.addEventListener('click', (event) => {
-                event.stopPropagation(); // Prevent click from bubbling to the parent slot's listener
-                if (typeof _drakeClickHandler === 'function') {
-                    _drakeClickHandler(index); // Pass the index to the handler in game.js
-                }
-            });
-
-            // Append the fully constructed drake element to the slot
-            slotEl.appendChild(drakeEl);
-        }
-        // If drakeData is null, slot remains empty
-    });
-}
+// --- Update Combat Button Text ---
+export function updateCombatButton(isCombatActive){if(combatStartStopBtn)combatStartStopBtn.textContent=isCombatActive?"Stop Combat":"Start Combat";}
 
 // --- Drake Details Panel Functions ---
+export function showDrakeDetails(drakeData){const panel=drakeDetailsPanel;if(!panel||!drakeData){if(panel)hideDrakeDetails();return;} try{const nameEl=panel.querySelector('#detail-name'),levelEl=panel.querySelector('#detail-level'),rarityEl=panel.querySelector('#detail-rarity'),elementEl=panel.querySelector('#detail-element'),imageEl=panel.querySelector('#detail-image'),statsEl=panel.querySelector('#detail-stats'),potentialEl=panel.querySelector('#detail-potential'),incomeEl=panel.querySelector('#detail-income');if(nameEl)nameEl.textContent=drakeData.name||'Unknown';if(levelEl)levelEl.textContent=`Level: ${drakeData.level??'?'}`;if(rarityEl){rarityEl.textContent=`Rarity: ${drakeData.rarity||'?'}`;rarityEl.className='detail-rarity-text';if(drakeData.rarityClass)rarityEl.classList.add(drakeData.rarityClass+'-text');}if(elementEl)elementEl.textContent=`${drakeData.elementIcon||'?'} Element: ${drakeData.element||'?'}`;if(imageEl){imageEl.src=drakeData.imageSrc||'images/placeholder.png';imageEl.alt=drakeData.name||'Drake';}if(potentialEl)potentialEl.textContent=`Potential: ${drakeData.potential??'?'}`;if(statsEl&&drakeData.stats){statsEl.innerHTML=`<li>Str: ${drakeData.stats.str||'?'}</li><li>Vit: ${drakeData.stats.vit||'?'}</li><li>Agi: ${drakeData.stats.agi||'?'}</li><li>Foc: ${drakeData.stats.foc??'?'}</li>`;}else if(statsEl){statsEl.innerHTML='<li>Stats N/A</li>';} if(incomeEl&&typeof drakeData.passiveIncomeBase==='number'&&drakeData.stats&&typeof drakeData.stats.foc==='number'){const focusMultiplier=1+(drakeData.stats.foc/100);const effectiveIncome=Math.round(drakeData.passiveIncomeBase*focusMultiplier);incomeEl.textContent=`Income: ${effectiveIncome}/sec`;}else if(incomeEl){incomeEl.textContent=`Income: 0/sec`;} panel.classList.remove('hidden');}catch(error){console.error("Error populating details:",error);hideDrakeDetails();}}
+export function hideDrakeDetails(){if(drakeDetailsPanel)drakeDetailsPanel.classList.add('hidden');}
 
-// Shows the details panel and populates it with drake data
-export function showDrakeDetails(drakeData) {
-    const panel = document.getElementById('drake-details-panel'); // Get panel reference again
-    if (!panel || !drakeData) {
-        // Optionally hide if called with no data after being open
-        if (panel) hideDrakeDetails();
-        return;
-    }
+// --- Resource Updates ---
+export function updateResourceDisplay(amount){if(resourceCountEl)resourceCountEl.textContent=amount??0;}
+export function updateEssenceDisplay(amount){if(essenceCountEl)essenceCountEl.textContent=amount??0;}
+export function updateShardsDisplay(amount){if(shardsCountEl)shardsCountEl.textContent=amount??0;}
+export function updateHighestDrakeDisplay(level){if(!highestDrakeEl)return;highestDrakeEl.textContent=level>=0&&level<DRAKE_LEVELS.length?DRAKE_LEVELS[level].name:'None';}
+export function updateBuyButton(currentResources,isGridFull){if(!buyDrakeBtn||!buyCostSpan)return;const cost=BASE_DRAKE_COST;const canAfford=(currentResources??0)>=cost;buyDrakeBtn.disabled=isGridFull||!canAfford;if(isGridFull){buyDrakeBtn.title="Grid full!";}else if(!canAfford){buyDrakeBtn.title=`Need ${cost}`;}else{buyDrakeBtn.title="";}buyCostSpan.textContent=cost;}
 
+// --- Show Message ---
+export function showMessage(text,duration=3000){if(!messageBoxEl)return;messageBoxEl.textContent=text;messageBoxEl.style.opacity=1;clearTimeout(messageTimeout);if(duration>0)messageTimeout=setTimeout(()=>{if(messageBoxEl)messageBoxEl.style.opacity=0;},duration);}
 
-    // Populate panel elements (assuming specific IDs exist in HTML)
-    const nameEl = panel.querySelector('#detail-name');
-    const levelEl = panel.querySelector('#detail-level');
-    const rarityEl = panel.querySelector('#detail-rarity');
-    const elementEl = panel.querySelector('#detail-element');
-    const imageEl = panel.querySelector('#detail-image');
-    const statsEl = panel.querySelector('#detail-stats'); // A div/ul to list stats
-    const potentialEl = panel.querySelector('#detail-potential');
-    const incomeEl = panel.querySelector('#detail-income');
-
-    if (nameEl) nameEl.textContent = drakeData.name;
-    if (levelEl) levelEl.textContent = `Level: ${drakeData.level}`;
-    if (rarityEl) {
-        rarityEl.textContent = `Rarity: ${drakeData.rarity}`;
-        // Also update class for potential color styling of the rarity text
-        rarityEl.className = 'detail-rarity-text'; // Base class for potential default styling
-        if (drakeData.rarityClass) {
-            rarityEl.classList.add(drakeData.rarityClass + '-text'); // e.g., rarity-common-text
-        }
-    }
-    if (elementEl) elementEl.textContent = `${drakeData.elementIcon} Element: ${drakeData.element}`;
-    if (imageEl) {
-        imageEl.src = drakeData.imageSrc || 'images/placeholder.png';
-        imageEl.alt = drakeData.name;
-    }
-    if (potentialEl) potentialEl.textContent = `Potential: ${drakeData.potential}`;
-
-    // Populate Stats List
-    if (statsEl && drakeData.stats) {
-        statsEl.innerHTML = `
-            <li>Strength: ${drakeData.stats.str || '?'}</li>
-            <li>Vitality: ${drakeData.stats.vit || '?'}</li>
-            <li>Agility: ${drakeData.stats.agi || '?'}</li>
-            <li>Focus: ${drakeData.stats.foc !== undefined ? drakeData.stats.foc : '?'}</li>
-        `; // Added fallbacks
-    } else if (statsEl) {
-        statsEl.innerHTML = '<li>Stats not available.</li>'; // Placeholder if no stats
-    }
-     // Calculate and display effective passive income
-    if (incomeEl && typeof drakeData.passiveIncomeBase === 'number' && drakeData.stats && typeof drakeData.stats.foc === 'number') {
-         const focusMultiplier = 1 + (drakeData.stats.foc / 100);
-         const effectiveIncome = Math.round(drakeData.passiveIncomeBase * focusMultiplier);
-         incomeEl.textContent = `Passive Income: ${effectiveIncome}/sec`;
-     } else if (incomeEl) {
-         incomeEl.textContent = `Passive Income: 0/sec`; // For eggs or invalid data
-     }
-
-
-    panel.classList.remove('hidden'); // Make panel visible
-}
-
-// Hides the details panel
-export function hideDrakeDetails() {
-    const panel = document.getElementById('drake-details-panel');
-    if (panel) {
-        panel.classList.add('hidden');
-    }
-}
-
-
-// --- Other UI Update Functions ---
-
-export function updateResourceDisplay(amount) {
-    if (resourceCountEl) resourceCountEl.textContent = amount;
-}
-
-export function updateHighestDrakeDisplay(level) {
-    if (!highestDrakeEl) return;
-    // Use base DRAKE_LEVELS config for name lookup
-    highestDrakeEl.textContent = level >= 0 && level < DRAKE_LEVELS.length ? DRAKE_LEVELS[level].name : 'None';
-}
-
-export function updateBuyButton(currentResources, isGridFull) {
-    if (!buyDrakeBtn || !buyCostSpan) return;
-    const cost = BASE_DRAKE_COST;
-    const canAfford = currentResources >= cost;
-    buyDrakeBtn.disabled = isGridFull || !canAfford;
-
-    if (isGridFull) {
-        buyDrakeBtn.title = "Grid is full!";
-    } else if (!canAfford) {
-        buyDrakeBtn.title = `Need ${cost} resources`;
-    } else {
-        buyDrakeBtn.title = "";
-    }
-    buyCostSpan.textContent = cost;
-}
-
-let messageTimeout = null;
-export function showMessage(text, duration = 3000) {
-    if (!messageBoxEl) return;
-    messageBoxEl.textContent = text;
-    messageBoxEl.style.opacity = 1;
-
-    clearTimeout(messageTimeout);
-    if (duration > 0) {
-        messageTimeout = setTimeout(() => {
-            // Check if element still exists before modifying
-            if (messageBoxEl) {
-                 messageBoxEl.style.opacity = 0;
-            }
-        }, duration);
-    }
-}
-
-// --- Drag/Drop UI Feedback (Correct Single Instance) ---
-export function setDraggedElement(element, index) {
-    draggedDrakeElement = element;
-    draggedDrakeIndex = index;
-    if (draggedDrakeElement) {
-        // Use timeout to ensure the class is added after the drag operation starts visually
-        setTimeout(() => {
-            // Check if still valid (drag didn't end instantly)
-            if (draggedDrakeElement) {
-                 draggedDrakeElement.classList.add('dragging');
-            }
-        }, 0);
-    }
-}
-export function clearDraggedElement() {
-    if (draggedDrakeElement) {
-        draggedDrakeElement.classList.remove('dragging');
-    }
-    draggedDrakeElement = null;
-    draggedDrakeIndex = -1;
-}
-export function getDraggedIndex() {
-    return draggedDrakeIndex;
-}
-export function addDragOverHighlight(targetSlot) {
-    // Check if targetSlot is valid before adding class
-    if (targetSlot && targetSlot.classList) {
-        targetSlot.classList.add('drag-over');
-    }
-}
-export function removeDragOverHighlight(targetSlot) {
-    // Check if targetSlot is valid before removing class
-     if (targetSlot && targetSlot.classList) {
-         targetSlot.classList.remove('drag-over');
-     }
-}
-export function removeAllDragOverHighlights() {
-    // Check if gameGridEl exists before querying
-    if (gameGridEl) {
-        gameGridEl.querySelectorAll('.grid-slot.drag-over').forEach(el => el.classList.remove('drag-over'));
-    }
-}
-
+// --- Drag/Drop UI Feedback & Highlighting ---
+export function setDraggedElement(element,index){draggedDrakeElement=element;draggedDrakeIndex=index;if(draggedDrakeElement){setTimeout(()=>{if(draggedDrakeElement)draggedDrakeElement.classList.add('dragging');},0);}}
+export function clearDraggedElement(){if(draggedDrakeElement)draggedDrakeElement.classList.remove('dragging');draggedDrakeElement=null;draggedDrakeIndex=-1;draggedDrakeId=null;}
+export function getDraggedIndex(){return draggedDrakeIndex;}
+export function getDraggedDrakeId(){return draggedDrakeId;}
+export function handleDragOverGridOrCombat(event){event.preventDefault();event.dataTransfer.dropEffect='move';removeAllDragOverHighlights();const targetSlot=event.target.closest('.grid-slot,.combat-slot');if(targetSlot)addDragOverHighlight(targetSlot);}
+export function handleDragLeaveGridOrCombat(event){const targetSlot=event.target.closest('.grid-slot,.combat-slot');if(targetSlot&&!targetSlot.contains(event.relatedTarget))removeDragOverHighlight(targetSlot);}
+export function addDragOverHighlight(targetSlot){if(targetSlot?.classList)targetSlot.classList.add('drag-over');}
+export function removeDragOverHighlight(targetSlot){if(targetSlot?.classList)targetSlot.classList.remove('drag-over');}
+export function removeAllDragOverHighlights(){document.querySelectorAll('.grid-slot.drag-over,.combat-slot.drag-over').forEach(el=>el.classList.remove('drag-over'));}
 
 // --- Music Button Update ---
-export function updateMusicButtonText(isPlaying) {
-     if(musicToggleBtn) musicToggleBtn.textContent = isPlaying ? "Pause Music" : "Play Music";
-}
+export function updateMusicButtonText(isPlaying){if(musicToggleBtn)musicToggleBtn.textContent=isPlaying?"Pause Music":"Play Music";}
 
 // --- END OF FILE ui.js ---

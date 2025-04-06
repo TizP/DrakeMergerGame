@@ -1,46 +1,8 @@
-import { SAVE_KEY } from './config.js';
+// --- START OF FILE saveLoad.js ---
 
-export function saveGame(gameState) {
-    try {
-        const stateString = JSON.stringify(gameState);
-        localStorage.setItem(SAVE_KEY, stateString);
-        console.log("Game saved successfully.");
-        return true;
-    } catch (error) {
-        console.error("Error saving game:", error);
-        return false;
-    }
-}
+export function saveGame(gameState,saveKey){if(!gameState||!saveKey){console.error("Save fail: Invalid state/key.");return false;} try{const stateString=JSON.stringify(gameState);localStorage.setItem(saveKey,stateString);console.log(`Saved key: ${saveKey}`);return true;}catch(error){console.error("Save Error:",error);if(error.name==='QuotaExceededError'){alert("Save failed: Storage limit exceeded.");}return false;}}
+export function loadGame(saveKey){if(!saveKey){console.error("Load fail: Invalid key.");return null;} try{const stateString=localStorage.getItem(saveKey);if(stateString){const loaded=JSON.parse(stateString);console.log(`Loaded key: ${saveKey}`);return loaded;}console.log(`No save data for key: ${saveKey}`);return null;}catch(error){console.error(`Load Error key ${saveKey}:`,error);return null;}}
+export function deleteSave(saveKey){if(!saveKey){console.error("Delete fail: Invalid key.");return false;} try{localStorage.removeItem(saveKey);console.log(`Deleted key: ${saveKey}`);return true;}catch(error){console.error("Delete Error:",error);return false;}}
+export function hasSaveData(saveKey){if(!saveKey)return false;return localStorage.getItem(saveKey)!==null;}
 
-export function loadGame() {
-    try {
-        const stateString = localStorage.getItem(SAVE_KEY);
-        if (stateString) {
-            const gameState = JSON.parse(stateString);
-            console.log("Game loaded successfully.");
-            return gameState;
-        }
-        console.log("No save data found.");
-        return null; // Indicate no save found
-    } catch (error) {
-        console.error("Error loading game:", error);
-        // Optionally delete corrupted save data
-        // deleteSave();
-        return null; // Indicate error or no save
-    }
-}
-
-export function deleteSave() {
-    try {
-        localStorage.removeItem(SAVE_KEY);
-        console.log("Save data deleted.");
-        return true;
-    } catch (error) {
-        console.error("Error deleting save data:", error);
-        return false;
-    }
-}
-
-export function hasSaveData() {
-    return localStorage.getItem(SAVE_KEY) !== null;
-}
+// --- END OF FILE saveLoad.js ---

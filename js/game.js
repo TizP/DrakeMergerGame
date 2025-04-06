@@ -1,356 +1,75 @@
 // --- START OF FILE game.js ---
 
 import * as config from './config.js';
-import * as drake from './drake.js'; // Imports the updated drake module
+import { randomInRange } from './config.js'; // Import specific helper
+import * as drake from './drake.js';
 import * as grid from './grid.js';
-import * as ui from './ui.js'; // Will update ui.js next
+import * as ui from './ui.js';
 import * as saveLoad from './saveLoad.js';
 import * as audio from './audio.js';
 
-// Default game state structure V2
-const getDefaultGameState = () => ({
-    resources: 50,
-    gridSlots: Array(config.GRID_SIZE).fill(null),
-    highestDrakeLevel: -1,
-    // Add other top-level state if needed later (e.g., research, combat)
-});
-
+const getDefaultGameState = () => ({ resources: 50, drakeEssence: 0, genericShards: 0, gridSlots: Array(config.GRID_SIZE).fill(null), highestDrakeLevel: -1, combatTeamSlots: Array(config.COMBAT_TEAM_SIZE).fill(null), currentWave: 1, currentEnemy: null, isCombatActive: false, enemyAttackCooldown: 0, });
 let gameState = getDefaultGameState();
 let passiveIncomeInterval = null;
+let combatInterval = null;
 
-// Initialization: Loads save or starts fresh
-export function initGame(loadSave = true) {
-    console.log("Initializing game (V2)...");
-    let loadedState = null;
-    if (loadSave) {
-        // Use the new save key from config.js
-        loadedState = saveLoad.loadGame(config.SAVE_KEY);
-    }
-
-    if (loadedState && loadedState.gridSlots) { // Basic check if loaded state seems valid
-        // TODO: Add more robust validation/migration logic if save structure changes drastically later
-        gameState = { ...getDefaultGameState(), ...loadedState }; // Merge loaded state over defaults
-        console.log("Game loaded from save (V2).");
-
-        // Find the highest drake ID from the loaded grid *before* initializing grid module
-        const maxId = findHighestDrakeId(gameState.gridSlots);
-        drake.resetDrakeIdCounter(maxId);
-
-    } else {
-        gameState = getDefaultGameState(); // Start fresh
-        drake.resetDrakeIdCounter(-1); // Reset IDs from scratch
-        console.log("Initialized new game state (V2).");
-    }
-
-    // Ensure gridSlots array is the correct size, even if save was malformed
-    if (!gameState.gridSlots || gameState.gridSlots.length !== config.GRID_SIZE) {
-         console.warn("Loaded grid data mismatch or missing. Resetting grid.");
-         gameState.gridSlots = Array(config.GRID_SIZE).fill(null);
-    }
-
-    // Initialize grid module with the potentially loaded state
-    grid.initGrid(gameState.gridSlots);
-    gameState.gridSlots = grid.getGridSlots(); // Ensure game state uses the grid module's copy
-
-    // Initial UI updates
-    ui.updateResourceDisplay(gameState.resources);
-    ui.updateHighestDrakeDisplay(gameState.highestDrakeLevel); // Update based on loaded/default level
-    ui.renderGrid(gameState.gridSlots); // Render the grid with potentially complex drakes
-    ui.updateBuyButton(gameState.resources, grid.isGridFull());
-    // Update highest level display *after* rendering, in case loaded state was missing it
-    updateHighestDrakeLevel(); // Recalculate and potentially update display
-
-    startPassiveIncome();
-    audio.updateMusicButtonUI(audio.isAudioPlaying());
-}
-
-// Helper to find the max ID among drakes in a grid array
-function findHighestDrakeId(gridSlots) {
-    let maxId = -1;
-    gridSlots.forEach(d => {
-        if (d && typeof d.id === 'number' && d.id > maxId) {
-            maxId = d.id;
-        }
-    });
-    return maxId;
-}
-
-
-// Starts the passive income generation loop
-function startPassiveIncome() {
-    if (passiveIncomeInterval) clearInterval(passiveIncomeInterval);
-
-    passiveIncomeInterval = setInterval(() => {
-        let totalIncome = 0;
-        gameState.gridSlots.forEach(d => {
-            if (d && d.passiveIncomeBase > 0 && d.stats && typeof d.stats.foc === 'number') {
-                // Calculate income: Base * (1 + Focus modifier)
-                // Example: Focus of 100 means +100% (doubled income)
-                const focusMultiplier = 1 + (d.stats.foc / 100);
-                totalIncome += d.passiveIncomeBase * focusMultiplier;
-            }
-        });
-
-        if (totalIncome > 0) {
-            addResources(Math.round(totalIncome)); // Round income to avoid fractions of resources
-        }
-    }, config.INCOME_INTERVAL);
-}
-
-// Adds resources and updates UI
-export function addResources(amount) {
-    gameState.resources += amount;
-    ui.updateResourceDisplay(gameState.resources);
-    // Update buy button only if state might change
-    if (gameState.resources >= config.BASE_DRAKE_COST || gameState.resources - amount < config.BASE_DRAKE_COST) {
-         ui.updateBuyButton(gameState.resources, grid.isGridFull());
-    }
-}
-
-// Buys a level 0 drake (Egg)
-export function buyDrake() {
-    const cost = config.BASE_DRAKE_COST;
-    const isFull = grid.isGridFull();
-
-    if (gameState.resources >= cost && !isFull) {
-        const emptyIndex = grid.findEmptySlot();
-        if (emptyIndex !== -1) {
-            gameState.resources -= cost;
-            const newDrake = drake.createDrake(0); // createDrake now adds stats/rarity etc.
-            if (newDrake && grid.placeDrake(newDrake, emptyIndex)) {
-                gameState.gridSlots = grid.getGridSlots();
-                ui.updateResourceDisplay(gameState.resources);
-                ui.renderGrid(gameState.gridSlots);
-                ui.updateBuyButton(gameState.resources, grid.isGridFull());
-                ui.showMessage(`Purchased ${newDrake.rarity} ${newDrake.element} Egg!`, 2500);
-                // Don't need updateHighestDrakeLevel here, as level 0 can't be highest initially
-            } else {
-                 gameState.resources += cost; // Refund if placement failed
-                 ui.showMessage("Error placing drake.", 3000);
-                 console.error("Failed to place newly created drake:", newDrake);
-            }
-        }
-    } else if (isFull) {
-        ui.showMessage("Grid is full!", 3000);
-    } else {
-        ui.showMessage(`Not enough resources! Need ${cost}.`, 3000);
-    }
-     ui.updateBuyButton(gameState.resources, grid.isGridFull()); // Ensure button state is correct
-}
-
-// --- MERGE LOGIC OVERHAULED ---
-export function attemptMerge(fromIndex, toIndex) {
-    if (fromIndex === toIndex) return;
-
-    const drake1 = grid.getDrakeAt(fromIndex); // Drake being dragged
-    const drake2 = grid.getDrakeAt(toIndex);   // Drake being dropped onto
-
-    if (!drake1 || !drake2) {
-        console.warn("Merge attempt failed: One or both slots empty.");
-        return;
-    }
-
-    if (drake1.level === drake2.level) {
-        const currentLevel = drake1.level;
-        if (currentLevel < config.MAX_DRAKE_LEVEL) {
-
-            // Calculate the result of the merge using the new drake module function
-            const mergedDrakeData = drake.calculateMergedDrakeStats(drake1, drake2);
-
-            if (mergedDrakeData) {
-                // Remove old drakes
-                grid.removeDrake(fromIndex);
-                grid.removeDrake(toIndex);
-
-                // Place the new merged drake (usually in the target slot)
-                if (grid.placeDrake(mergedDrakeData, toIndex)) {
-                    gameState.gridSlots = grid.getGridSlots(); // Update local state copy
-                    updateHighestDrakeLevel(); // Check if this merge created a new highest level
-                    ui.renderGrid(gameState.gridSlots); // Re-render the grid
-                    ui.updateBuyButton(gameState.resources, grid.isGridFull()); // Grid might have space now
-                    ui.showMessage(`Merged into Lvl ${mergedDrakeData.level} ${mergedDrakeData.rarity} ${mergedDrakeData.element} ${mergedDrakeData.name}!`, 3000);
-                } else {
-                    // Should not happen if slots were cleared, but handle potential errors
-                    console.error("Failed to place merged drake!", mergedDrakeData);
-                    ui.showMessage("Merge error: Failed to place result!", 3000);
-                    // Attempt to restore parents? Difficult state to recover reliably.
-                    // For now, drakes are lost. Consider better error recovery if this happens often.
-                    gameState.gridSlots = grid.getGridSlots(); // Update state even on error
-                    ui.renderGrid(gameState.gridSlots);
-                }
-            } else {
-                // calculateMergedDrakeStats returned null (e.g., max level reached calculation)
-                 ui.showMessage("Cannot merge further at this level.", 2000);
-            }
-
-        } else {
-            ui.showMessage("Already at max level!", 2000);
-            // Optional: Allow merging max level for resources/essence later
-        }
-    } else {
-        ui.showMessage("Drakes must be the same level to merge!", 2500);
-    }
-}
-
-
-// Checks and updates the highest level drake achieved
-function updateHighestDrakeLevel() {
-    let maxLevel = -1;
-    gameState.gridSlots.forEach(d => {
-        if (d && d.level > maxLevel) {
-            maxLevel = d.level;
-        }
-    });
-
-    // Only update if the level actually changed
-    if (maxLevel !== gameState.highestDrakeLevel) {
-         // Ensure level is within bounds of defined levels before trying to get name
-        if (maxLevel >= 0 && maxLevel < config.DRAKE_LEVELS.length) {
-             if(maxLevel > gameState.highestDrakeLevel) {
-                ui.showMessage(`New highest drake achieved: ${config.DRAKE_LEVELS[maxLevel].name} (Lvl ${maxLevel})!`, 3500);
-             }
-             gameState.highestDrakeLevel = maxLevel;
-             ui.updateHighestDrakeDisplay(gameState.highestDrakeLevel);
-        } else if (maxLevel === -1) { // Handle case where grid becomes empty
-             gameState.highestDrakeLevel = -1;
-             ui.updateHighestDrakeDisplay(gameState.highestDrakeLevel);
-        } else {
-             console.warn(`Calculated maxLevel ${maxLevel} is out of bounds.`);
-             // Optionally set to known max or keep previous highest
-             gameState.highestDrakeLevel = Math.min(maxLevel, config.MAX_DRAKE_LEVEL);
-              ui.updateHighestDrakeDisplay(gameState.highestDrakeLevel);
-        }
-    }
-}
-
-
-// --- Save/Load/Delete ---
-export function handleSave() {
-    // Use the new save key
-    if (saveLoad.saveGame(gameState, config.SAVE_KEY)) {
-        ui.showMessage("Game Saved!", 2000);
-    } else {
-        ui.showMessage("Failed to save game!", 3000);
-    }
-}
-
-export function handleLoad() {
-    clearInterval(passiveIncomeInterval); // Stop income before potential state change
-    passiveIncomeInterval = null;
-
-    initGame(true); // Re-initialize, attempting load with the new save key
-
-     // Check if load was successful (e.g., resources != default) - slightly indirect check
-     if(saveLoad.hasSaveData(config.SAVE_KEY) && gameState.resources !== getDefaultGameState().resources){
-        ui.showMessage("Game Loaded!", 2000);
-     } else if (saveLoad.hasSaveData(config.SAVE_KEY)) {
-         // Loaded data might have been minimal or matched default
-         ui.showMessage("Loaded save data.", 2000);
-     }
-     else {
-        ui.showMessage("No save data found. Started new game.", 3000);
-     }
-}
-
-export function handleDelete() {
-    if (confirm("Are you sure you want to delete your saved game? This cannot be undone.")) {
-        // Use the new save key
-        if (saveLoad.deleteSave(config.SAVE_KEY)) {
-            ui.showMessage("Save data deleted.", 2000);
-            // Optionally reset the current game state to default immediately
-            clearInterval(passiveIncomeInterval); passiveIncomeInterval = null;
-            initGame(false); // Re-initialize without loading
-        } else {
-            ui.showMessage("Failed to delete save data.", 3000);
-        }
-    }
-}
-
-// --- Drag and Drop Logic Handling ---
-// Mostly unchanged, but ensure drake objects passed around are the new complex ones
-
-export function handleDragStart(event, index) {
-    const drakeEl = event.target.closest('.drake'); // Ensure targeting the main drake container
-    if (!drakeEl) return;
-
-    const drakeData = grid.getDrakeAt(index);
-    if (!drakeData) return;
-
-    ui.setDraggedElement(drakeEl, index);
-    // Use drake ID for data transfer - good practice
-    event.dataTransfer.setData('text/plain', drakeData.id.toString());
-    event.dataTransfer.effectAllowed = 'move';
-}
-
-export function handleDragEnd() {
-    ui.clearDraggedElement();
-    ui.removeAllDragOverHighlights();
-}
-
-export function handleDragOver(event) {
-    event.preventDefault();
-    event.dataTransfer.dropEffect = 'move';
-    const targetSlot = event.target.closest('.grid-slot');
-    if (targetSlot) {
-        ui.removeAllDragOverHighlights();
-        ui.addDragOverHighlight(targetSlot);
-    }
-}
-
-export function handleDragLeave(event) {
-     const targetSlot = event.target.closest('.grid-slot');
-     if(targetSlot){
-        if (!targetSlot.contains(event.relatedTarget)) {
-            ui.removeDragOverHighlight(targetSlot);
-        }
-     } else {
-         // If leaving the grid entirely while over empty space
-         ui.removeAllDragOverHighlights();
-     }
-}
-
+export function initGame(loadSave = true) { console.log("Init Game V2 Combat..."); stopCombat(); let loadedState=null; if(loadSave){loadedState=saveLoad.loadGame(config.SAVE_KEY);} if(loadedState?.gridSlots&&loadedState?.combatTeamSlots){const tempState={...getDefaultGameState(),...loadedState}; tempState.gridSlots=Array.isArray(tempState.gridSlots)?tempState.gridSlots.slice(0,config.GRID_SIZE):[]; while(tempState.gridSlots.length<config.GRID_SIZE)tempState.gridSlots.push(null); tempState.combatTeamSlots=Array.isArray(tempState.combatTeamSlots)?tempState.combatTeamSlots.slice(0,config.COMBAT_TEAM_SIZE):[]; while(tempState.combatTeamSlots.length<config.COMBAT_TEAM_SIZE)tempState.combatTeamSlots.push(null); tempState.currentWave=tempState.currentWave||1;tempState.drakeEssence=tempState.drakeEssence||0;tempState.genericShards=tempState.genericShards||0; gameState=tempState; console.log("Loaded save V2."); const maxGridId=findHighestDrakeId(gameState.gridSlots); const maxCombatId=findHighestDrakeId(gameState.combatTeamSlots); drake.resetDrakeIdCounter(Math.max(maxGridId,maxCombatId)); if(gameState.isCombatActive&&gameState.currentEnemy){startCombatInterval();console.log("Resuming active combat.");} else {gameState.isCombatActive=false;gameState.currentEnemy=null;}}else{gameState=getDefaultGameState();drake.resetDrakeIdCounter(-1);console.log("New game V2.");} grid.initGrid(gameState.gridSlots); gameState.gridSlots=grid.getGridSlots(); ui.updateResourceDisplay(gameState.resources); ui.updateEssenceDisplay(gameState.drakeEssence); ui.updateShardsDisplay(gameState.genericShards); ui.updateHighestDrakeDisplay(gameState.highestDrakeLevel); ui.renderGrid(gameState.gridSlots); ui.renderCombatTeamSlots(gameState.combatTeamSlots); ui.updateCombatPanel(gameState); ui.updateBuyButton(gameState.resources,grid.isGridFull()); updateHighestDrakeLevel(); startPassiveIncome(); audio.updateMusicButtonUI(audio.isAudioPlaying()); ui.updateCombatButton(gameState.isCombatActive); }
+function findHighestDrakeId(drakeArray) { let maxId=-1; if(!Array.isArray(drakeArray))return maxId; drakeArray.forEach(d=>{if(d?.id>maxId)maxId=d.id;}); return maxId; }
+function startPassiveIncome() { if(passiveIncomeInterval)clearInterval(passiveIncomeInterval); passiveIncomeInterval=setInterval(()=>{let totalIncome=0; gameState.gridSlots.forEach(d=>{if(d?.passiveIncomeBase>0&&d?.stats?.foc!==undefined){const focusMultiplier=1+(d.stats.foc/100);totalIncome+=d.passiveIncomeBase*focusMultiplier;}}); if(totalIncome>0)addResources(Math.round(totalIncome));},config.INCOME_INTERVAL); }
+export function addResources(amount) { gameState.resources+=amount; ui.updateResourceDisplay(gameState.resources); if((gameState.resources>=config.BASE_DRAKE_COST)!==((gameState.resources-amount)>=config.BASE_DRAKE_COST)){ui.updateBuyButton(gameState.resources,grid.isGridFull());} }
+export function addEssence(amount) { gameState.drakeEssence+=amount; ui.updateEssenceDisplay(gameState.drakeEssence); }
+export function addShards(amount) { gameState.genericShards+=amount; ui.updateShardsDisplay(gameState.genericShards); }
+export function buyDrake() { const cost=config.BASE_DRAKE_COST; const isFull=grid.isGridFull(); if(gameState.resources>=cost&&!isFull){const emptyIndex=grid.findEmptySlot();if(emptyIndex!==-1){gameState.resources-=cost;const newDrake=drake.createDrake(0);if(newDrake&&grid.placeDrake(newDrake,emptyIndex)){gameState.gridSlots=grid.getGridSlots();ui.updateResourceDisplay(gameState.resources);ui.renderGrid(gameState.gridSlots);ui.updateBuyButton(gameState.resources,grid.isGridFull());ui.showMessage(`Purchased ${newDrake.rarity} ${newDrake.element} Egg!`,2500);}else{gameState.resources+=cost;ui.showMessage("Error placing drake.",3000);console.error("Failed place",newDrake);}}}else if(isFull){ui.showMessage("Grid full!",3000);}else{ui.showMessage(`Need ${cost} res.`,3000);} ui.updateBuyButton(gameState.resources,grid.isGridFull()); }
+export function attemptMerge(fromIndex,toIndex) { if(fromIndex===toIndex)return; const d1=grid.getDrakeAt(fromIndex); const d2=grid.getDrakeAt(toIndex); if(!d1||!d2)return; if(d1.level===d2.level){if(d1.level<config.MAX_DRAKE_LEVEL){const merged=drake.calculateMergedDrakeStats(d1,d2);if(merged){grid.removeDrake(fromIndex);grid.removeDrake(toIndex);if(grid.placeDrake(merged,toIndex)){gameState.gridSlots=grid.getGridSlots();updateHighestDrakeLevel();ui.renderGrid(gameState.gridSlots);ui.updateBuyButton(gameState.resources,grid.isGridFull());ui.showMessage(`Merged: ${merged.rarity} L${merged.level} ${merged.name}!`,3000);}else{console.error("Failed place merge!",merged);ui.showMessage("Merge error!",3000);gameState.gridSlots=grid.getGridSlots();ui.renderGrid(gameState.gridSlots);}}else{ui.showMessage("Cannot merge.",2000);}}else{ui.showMessage("Max level!",2000);}}else{ui.showMessage("Levels must match!",2500);} }
+function updateHighestDrakeLevel() { let maxLvl=-1; gameState.gridSlots.forEach(d=>{if(d?.level>maxLvl)maxLvl=d.level;}); gameState.combatTeamSlots.forEach(d=>{if(d?.level>maxLvl)maxLvl=d.level;}); if(maxLvl!==gameState.highestDrakeLevel){const oldH=gameState.highestDrakeLevel;gameState.highestDrakeLevel=maxLvl;if(maxLvl>=0&&maxLvl<config.DRAKE_LEVELS.length){if(maxLvl>oldH)ui.showMessage(`New highest: ${config.DRAKE_LEVELS[maxLvl].name} (L${maxLvl})!`,3500); ui.updateHighestDrakeDisplay(maxLvl);}else if(maxLvl===-1){ui.updateHighestDrakeDisplay(-1);}else{console.warn(`MaxLvl ${maxLvl} out bounds.`);ui.updateHighestDrakeDisplay(config.MAX_DRAKE_LEVEL);}}}
+export function addDrakeToCombatTeam(drakeId,combatSlotIndex) { if(combatSlotIndex<0||combatSlotIndex>=config.COMBAT_TEAM_SIZE)return false; if(gameState.combatTeamSlots[combatSlotIndex]){ui.showMessage("Slot occupied.",2000);return false;} const gridIdx=gameState.gridSlots.findIndex(d=>d?.id===drakeId); if(gridIdx===-1){console.error("ID not on grid:",drakeId);return false;} const dMove=grid.removeDrake(gridIdx); if(!dMove)return false; const maxHp=config.BASE_DRAKE_HP+(dMove.stats.vit*config.VITALITY_HP_MULTIPLIER); const combatDrake={...dMove,maxHp:maxHp,currentHp:maxHp,combatStatus:'active'}; gameState.combatTeamSlots[combatSlotIndex]=combatDrake; gameState.gridSlots=grid.getGridSlots(); console.log(`Added ${combatDrake.name}(${combatDrake.id}) to slot ${combatSlotIndex}`); ui.renderGrid(gameState.gridSlots); ui.renderCombatTeamSlots(gameState.combatTeamSlots); return true; }
+export function removeDrakeFromCombatTeam(combatSlotIndex, targetGridIndex = -1) { if (combatSlotIndex<0||combatSlotIndex>=config.COMBAT_TEAM_SIZE||!gameState.combatTeamSlots[combatSlotIndex])return false; if(gameState.isCombatActive){/*ui.showMessage("Stop combat.",2500);return false;*/} const combatDrake=gameState.combatTeamSlots[combatSlotIndex]; const{maxHp,currentHp,combatStatus,...gridDrake}=combatDrake; let placed=false; if(targetGridIndex!==-1&&grid.getDrakeAt(targetGridIndex)===null){placed=grid.placeDrake(gridDrake,targetGridIndex);} if(!placed){const emptyIdx=grid.findEmptySlot();if(emptyIdx!==-1)placed=grid.placeDrake(gridDrake,emptyIdx);} if(placed){const placedIdx=targetGridIndex!==-1?targetGridIndex:gameState.gridSlots.findIndex(d=>d?.id===gridDrake.id); gameState.combatTeamSlots[combatSlotIndex]=null; gameState.gridSlots=grid.getGridSlots(); console.log(`Removed ${gridDrake.name}(${gridDrake.id}) from slot ${combatSlotIndex} to grid ${placedIdx}`); ui.renderGrid(gameState.gridSlots); ui.renderCombatTeamSlots(gameState.combatTeamSlots); return true;}else{ui.showMessage("No space on grid!",3000);return false;} }
+function generateEnemy(waveNumber) { const baseIdx=(waveNumber-1)%config.ENEMIES.length; const cycle=Math.floor((waveNumber-1)/config.ENEMIES.length); const baseE=config.ENEMIES[baseIdx]; const scHp=Math.pow(config.ENEMY_SCALING.hpMultiplier,cycle); const scDef=Math.pow(config.ENEMY_SCALING.defenseMultiplier,cycle); const scAtk=Math.pow(config.ENEMY_SCALING.attackMultiplier,cycle); const scRwd=Math.pow(config.ENEMY_SCALING.rewardMultiplier,cycle); const enemy={id:`${baseE.id}_w${waveNumber}`,name:baseE.name,image:baseE.image,elementType:baseE.elementType,maxHp:Math.round(baseE.baseHp*scHp),defense:Math.round(baseE.baseDefense*scDef),attack:Math.round(baseE.baseAttack*scAtk),rewardEssence:Math.round(baseE.rewardEssence*scRwd),rewardShards:Math.round(baseE.rewardShards*scRwd),}; enemy.currentHp=enemy.maxHp; console.log(`Gen Enemy W${waveNumber}:`,enemy); return enemy; }
+export function toggleCombat() { console.log("ToggleCombat. Active:",gameState.isCombatActive); if(gameState.isCombatActive){stopCombat();}else{const hasActive=gameState.combatTeamSlots.some(d=>d&&d.combatStatus!=='fatigued');console.log("Check active:",hasActive);if(hasActive){startCombat();}else{ui.showMessage("Add active drakes!",3000);}} }
+function startCombat() { console.log("Attempt Start Combat"); if(gameState.isCombatActive){console.log("Already active.");return;} gameState.isCombatActive=true; gameState.currentWave=gameState.currentWave||1; gameState.currentEnemy=generateEnemy(gameState.currentWave); gameState.combatTeamSlots.forEach(d=>{if(d){d.currentHp=d.maxHp;d.combatStatus='active';}}); gameState.enemyAttackCooldown=config.ENEMY_ATTACK_TICKS; startCombatInterval(); ui.updateCombatPanel(gameState); ui.updateCombatButton(true); console.log("Combat Started. W:",gameState.currentWave); }
+function stopCombat() { console.log("Attempt Stop Combat"); if(!combatInterval&&!gameState.isCombatActive)return; gameState.isCombatActive=false; if(combatInterval){clearInterval(combatInterval);combatInterval=null;console.log("Interval cleared.");} gameState.combatTeamSlots.forEach(d=>{if(d)d.combatStatus='active';}); ui.updateCombatButton(false); ui.renderCombatTeamSlots(gameState.combatTeamSlots); console.log("Combat Stopped."); }
+function startCombatInterval() { if(combatInterval)clearInterval(combatInterval); console.log("Starting combat interval..."); combatInterval=setInterval(processCombatTick,config.COMBAT_TICK_INTERVAL); }
+function processCombatTick() { try{if(!gameState.isCombatActive||!gameState.currentEnemy){console.log("Stopping tick: inactive/no enemy.");stopCombat();return;} let log=[]; gameState.combatTeamSlots.forEach(d=>{if(d?.combatStatus==='active'){const critCh=config.BASE_CRIT_CHANCE+(d.stats.agi*config.AGILITY_CRIT_SCALING); const didCrit=Math.random()<critCh; const baseDmg=d.stats.str*(1+d.level*0.05); let eleMod=config.BASE_ELEMENTAL_MODIFIER; if(config.ELEMENTAL_CHART[d.element]?.[gameState.currentEnemy.elementType]!==undefined){eleMod=config.ELEMENTAL_CHART[d.element][gameState.currentEnemy.elementType];} let finalDmg=baseDmg*eleMod; if(didCrit){finalDmg*=config.CRIT_DAMAGE_MULTIPLIER;} const dealt=Math.max(1,Math.round(finalDmg-gameState.currentEnemy.defense)); gameState.currentEnemy.currentHp-=dealt; log.push({type:didCrit?'crit':'damage',source:d.name,value:dealt,target:gameState.currentEnemy.name,effective:eleMod});}}); if(gameState.currentEnemy.currentHp<=0){console.log("Tick - Enemy Defeated"); gameState.currentEnemy.currentHp=0; log.push({type:'victory',message:`${gameState.currentEnemy.name} defeated!`}); addEssence(gameState.currentEnemy.rewardEssence||0); addShards(gameState.currentEnemy.rewardShards||0); log.push({type:'reward',essence:gameState.currentEnemy.rewardEssence||0,shards:gameState.currentEnemy.rewardShards||0}); gameState.currentWave++; gameState.currentEnemy=generateEnemy(gameState.currentWave); gameState.enemyAttackCooldown=config.ENEMY_ATTACK_TICKS; ui.updateCombatPanel(gameState); ui.showCombatMessages(log); return;} gameState.enemyAttackCooldown--; if(gameState.enemyAttackCooldown<=0){const activeD=gameState.combatTeamSlots.filter(d=>d?.combatStatus==='active'); if(activeD.length>0){const targetD=activeD[randomInRange(0,activeD.length-1)]; const dodgeCh=config.BASE_DODGE_CHANCE+(targetD.stats.agi*config.AGILITY_DODGE_SCALING); const didDodge=Math.random()<dodgeCh; if(!didDodge){const enemyDmg=Math.max(1,Math.round(gameState.currentEnemy.attack)); targetD.currentHp-=enemyDmg; log.push({type:'enemy_damage',source:gameState.currentEnemy.name,value:enemyDmg,target:targetD.name}); if(targetD.currentHp<=0){targetD.currentHp=0;targetD.combatStatus='fatigued'; log.push({type:'fatigue',target:targetD.name});}}else{log.push({type:'dodge',target:targetD.name});}} gameState.enemyAttackCooldown=config.ENEMY_ATTACK_TICKS;} const anyActive=gameState.combatTeamSlots.some(d=>d?.combatStatus==='active'); const teamHasD=gameState.combatTeamSlots.some(d=>d!==null); if(!anyActive&&teamHasD){console.log("Tick - Team defeated"); log.push({type:'defeat',message:'Team fatigued!'}); ui.showCombatMessages(log); stopCombat(); return;} if(gameState.isCombatActive){ui.updateCombatPanel(gameState); ui.showCombatMessages(log);}}catch(error){console.error("Tick Error:",error); stopCombat();} }
+export function handleSave() { if(saveLoad.saveGame(gameState,config.SAVE_KEY))ui.showMessage("Game Saved!",2000);else ui.showMessage("Save Failed!",3000); }
+export function handleLoad() { clearInterval(passiveIncomeInterval); passiveIncomeInterval=null; stopCombat(); initGame(true); if(saveLoad.hasSaveData(config.SAVE_KEY)){ui.showMessage("Game Loaded!",2000);}else{ui.showMessage("No save data.",3000);} }
+export function handleDelete() { if(confirm("Delete Save?")){stopCombat();if(saveLoad.deleteSave(config.SAVE_KEY)){ui.showMessage("Save deleted.",2000);initGame(false);}else{ui.showMessage("Delete failed.",3000);}} }
+export function handleDrakeClick(index) { console.log(`GAME: DrakeClick index: ${index}`); const dData=grid.getDrakeAt(index); if(dData){console.log(`GAME: Found drake:`,dData);ui.showDrakeDetails(dData);}else{console.log(`GAME: Empty slot click.`);ui.hideDrakeDetails();} }
+export function handleDragStart(event, index) { const dEl=event.target.closest('.drake'); if(!dEl)return; const dData=grid.getDrakeAt(index); if(!dData)return; ui.setDraggedElement(dEl,index); event.dataTransfer.setData('text/plain',dData.id.toString()); event.dataTransfer.effectAllowed='move'; console.log(`GAME: Drag Start GRID ${index}, ID ${dData.id}`); }
+export function handleDragEnd() { ui.clearDraggedElement(); ui.removeAllDragOverHighlights(); console.log("GAME: Drag End"); }
+export function handleDragOver(event) { /* Delegated to UI */ }
+export function handleDragLeave(event) { /* Delegated to UI */ }
 export function handleDrop(event) {
     event.preventDefault();
     ui.removeAllDragOverHighlights();
+    const draggedIdStr = event.dataTransfer.getData('text/plain');
+    const draggedId = parseInt(draggedIdStr, 10);
+    if (isNaN(draggedId)) { console.warn("Invalid ID on drop:", draggedIdStr); ui.clearDraggedElement(); return; }
+    console.log(`GAME: Drop for ID: ${draggedId}`);
 
-    const fromIndex = ui.getDraggedIndex();
-    if (fromIndex === -1) return;
+    const targetEl = event.target;
+    const targetCombat = targetEl.closest('.combat-slot');
+    const targetGrid = targetEl.closest('.grid-slot');
+    const fromGridIdx = ui.getDraggedIndex(); // -1 if not from grid
 
-    const targetSlot = event.target.closest('.grid-slot');
-    if (!targetSlot) return; // Dropped outside a valid slot
+    if (targetCombat?.dataset.index !== undefined) { // Drop Combat
+        const combatIdx = parseInt(targetCombat.dataset.index, 10);
+        if (!isNaN(combatIdx)) { console.log(`GAME: Dropping onto combat ${combatIdx}`); addDrakeToCombatTeam(draggedId, combatIdx); }
+    } else if (targetGrid?.dataset.index !== undefined) { // Drop Grid
+        const toGridIdx = parseInt(targetGrid.dataset.index, 10);
+        if (isNaN(toGridIdx)) { ui.clearDraggedElement(); return; }
+        console.log(`GAME: Dropping onto grid ${toGridIdx}. From grid: ${fromGridIdx}`);
 
-    const toIndex = parseInt(targetSlot.dataset.index, 10);
-    if (isNaN(toIndex)) return; // Invalid index
-
-    const drakeAtTarget = grid.getDrakeAt(toIndex);
-
-    if (drakeAtTarget !== null) {
-        // Target slot is occupied - attempt merge
-        attemptMerge(fromIndex, toIndex);
-    } else {
-        // Target slot is empty - move drake
-        const moveResult = grid.moveDrake(fromIndex, toIndex);
-        if (moveResult && moveResult.moved) {
-             gameState.gridSlots = grid.getGridSlots(); // Update state
-             ui.renderGrid(gameState.gridSlots); // Re-render
-             // ui.showMessage("Drake moved.", 1500); // Optional message for move
+        if (fromGridIdx !== -1) { // Drag FROM GRID
+            const targetDrake = grid.getDrakeAt(toGridIdx);
+            if (targetDrake) { attemptMerge(fromGridIdx, toGridIdx); }
+            else { const moveRes = grid.moveDrake(fromGridIdx, toGridIdx); if (moveRes?.moved) { gameState.gridSlots = grid.getGridSlots(); ui.renderGrid(gameState.gridSlots); } }
+        } else { // Drag FROM COMBAT
+            console.log(`GAME: Drag source not grid, remove from combat.`);
+            const combatIdx = gameState.combatTeamSlots.findIndex(d => d?.id === draggedId);
+            if (combatIdx !== -1) { removeDrakeFromCombatTeam(combatIdx, toGridIdx); } // Pass target grid slot
+            else { console.warn(`Drop failed: ID ${draggedId} not in combat team.`); }
         }
-    }
-    // DragEnd handler clears dragging state
+    } else { console.log("Dropped outside valid target."); }
 }
-
-// --- Click Handling for Drake Details ---
-// This function will be passed to ui.js during init
-export function handleDrakeClick(index) {
-    const drakeData = grid.getDrakeAt(index);
-    if (drakeData) {
-        console.log(`Clicked on drake at index ${index}:`, drakeData);
-        ui.showDrakeDetails(drakeData); // Tell UI module to show details
-    } else {
-        // Clicked on an empty slot or something went wrong
-        ui.hideDrakeDetails(); // Hide details if showing
-    }
-}
-
 
 // --- END OF FILE game.js ---
