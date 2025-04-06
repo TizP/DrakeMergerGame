@@ -8,23 +8,24 @@ import * as tutorial from './tutorial.js';
 
 // --- DOM Ready ---
 document.addEventListener('DOMContentLoaded', () => {
-    console.log("DOM Ready. Initializing...");
+    console.log("DOM Ready. Initializing (V2)...");
 
-    // Initialize UI (pass event handlers from game logic)
+    // Initialize UI - Pass ALL necessary handlers from game logic
     ui.initUI(
-        game.buyDrake,
-        game.handleDragStart,
-        game.handleDragEnd,
-        game.handleDrop,
-        game.handleDragOver,
-        game.handleDragLeave
+        game.buyDrake,            // Handler for buy button click
+        game.handleDragStart,     // Handler for drag start on a drake
+        game.handleDragEnd,       // Handler for drag end on a drake
+        game.handleDrop,          // Handler for drop on a grid slot
+        game.handleDragOver,      // Handler for drag over a grid slot
+        game.handleDragLeave,     // Handler for drag leave from a grid slot
+        game.handleDrakeClick     // <<-- ADDED: Handler for clicking a drake/slot
     );
 
     // Initialize other modules
     audio.initAudio();
-    tutorial.initTutorial(); // Make sure tutorial.js is correctly initializing its buttons too
+    tutorial.initTutorial(); // Assumes tutorial.js is compatible or updated separately
 
-    // Initialize Core Game Logic
+    // Initialize Core Game Logic (V2 - attempts to load new save key)
     game.initGame();
 
     // --- Connect Control Buttons ---
@@ -33,11 +34,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const deleteSaveBtn = document.getElementById('delete-save-btn');
     const musicToggleBtn = document.getElementById('music-toggle-btn');
     const tutorialBtn = document.getElementById('tutorial-btn');
-    // === Get references for Credits ===
-    const creditsBtn = document.getElementById('credits-btn'); // Reference to the button itself
-    const creditsBox = document.getElementById('credits-box'); // Reference to the overlay div
-    const creditsCloseBtn = document.getElementById('credits-close-btn'); // Reference to the close button inside overlay
-    // ================================
+    const creditsBtn = document.getElementById('credits-btn');
+    const creditsBox = document.getElementById('credits-box');
+    const creditsCloseBtn = document.getElementById('credits-close-btn');
 
     // Standard Buttons
     if(saveBtn) saveBtn.addEventListener('click', game.handleSave);
@@ -49,36 +48,28 @@ document.addEventListener('DOMContentLoaded', () => {
             audio.toggleMusic();
             ui.updateMusicButtonText(audio.isAudioPlaying());
         });
-        // Set initial text
-        ui.updateMusicButtonText(audio.isAudioPlaying());
+        ui.updateMusicButtonText(audio.isAudioPlaying()); // Set initial text
     }
 
     if(tutorialBtn) tutorialBtn.addEventListener('click', tutorial.startTutorial);
 
-    // === Add Event Listeners for Credits ===
-    // Check if ALL necessary elements were found
+    // Credits Button Listeners
     if (creditsBtn && creditsBox && creditsCloseBtn) {
-        // Listener for the main "Show Credits" button
         creditsBtn.addEventListener('click', () => {
-            console.log("Credits button clicked"); // Add console log for debugging
-            creditsBox.classList.remove('hidden'); // Show the credits box
+            creditsBox.classList.remove('hidden');
         });
-
-        // Listener for the "Close" button inside the credits box
         creditsCloseBtn.addEventListener('click', () => {
-             console.log("Credits close button clicked"); // Add console log for debugging
-            creditsBox.classList.add('hidden'); // Hide the credits box
+            creditsBox.classList.add('hidden');
         });
     } else {
-        // Log which element might be missing if setup fails
-        console.error("Error setting up Credits button: One or more elements not found.", {
-             creditsBtnFound: !!creditsBtn,
-             creditsBoxFound: !!creditsBox,
-             creditsCloseBtnFound: !!creditsCloseBtn
-         });
+        console.error("Error setting up Credits button: Elements not found.", { creditsBtn, creditsBox, creditsCloseBtn });
     }
-    // =====================================
 
-    console.log("Initialization complete. Game running.");
+    // --- Drake Details Panel Interaction ---
+    // The logic to show/hide the panel is now within ui.js, triggered by game.handleDrakeClick
+    // We might need a listener here if we add ways to close the panel other than its own button
+    // (e.g., clicking outside the panel), but the explicit close button is handled in ui.initUI.
+
+    console.log("Initialization complete (V2). Game running.");
 });
 // --- END OF FILE main.js ---

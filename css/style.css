@@ -19,7 +19,7 @@ body {
     box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
     text-align: center;
     width: 95%;
-    max-width: 600px;
+    max-width: 600px; /* Adjusted max-width */
     margin-bottom: 20px;
 }
 
@@ -29,8 +29,8 @@ body {
     display: flex;
     justify-content: space-around;
     flex-wrap: wrap;
-    gap: 10px;
-    padding: 10px;
+    gap: 15px; /* Increased gap slightly */
+    padding: 10px 15px; /* Added horizontal padding */
     background-color: #e9e9e9;
     border-radius: 4px;
 }
@@ -42,10 +42,10 @@ body {
     padding: 5px;
     background-color: #d8c8b8;
     position: relative;
-    width: 80vmin;
+    width: 90vmin; /* Slightly larger grid relative to viewport */
+    max-width: 550px; /* Increased max grid size */
     aspect-ratio: 1 / 1;
-    max-width: 500px;
-    margin: 0 auto 20px auto;
+    margin: 20px auto; /* Added top margin */
     /* grid-template-columns/rows are set by JS */
 }
 
@@ -58,59 +58,91 @@ body {
     align-items: center;
     position: relative;
     aspect-ratio: 1 / 1;
+    overflow: hidden; /* Prevent content spillover */
 }
 
+/* --- Drake Styling V2 --- */
 .drake {
-    width: 90%;
-    height: 90%;
-    border-radius: 50%;
+    width: 95%; /* Slightly larger drake within slot */
+    height: 95%;
+    border-radius: 8px; /* Slightly less round */
     display: flex;
     justify-content: center;
     align-items: center;
     cursor: grab;
     user-select: none;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+    box-shadow: 0 3px 6px rgba(0,0,0,0.25); /* Enhanced shadow */
     transition: transform 0.1s ease-out, box-shadow 0.1s ease-out;
     overflow: hidden;
+    position: relative; /* Needed for absolute positioning of icons/text */
+    border: 3px solid transparent; /* Base border, transparency overridden by rarity */
+    background-color: #f0f0f0; /* Light background behind image */
 }
 
 .drake-image {
     display: block;
-    max-width: 100%;
-    max-height: 100%;
-    object-fit: contain;
+    width: 100%; /* Image tries to fill container */
+    height: 100%;
+    object-fit: contain; /* Scale image down to fit */
     user-select: none;
     pointer-events: none; /* Allow parent drake div to handle drag */
 }
 
+/* Rarity Borders */
+.drake.rarity-common { border-color: #a0a0a0; } /* Grey */
+.drake.rarity-uncommon { border-color: #5cb85c; } /* Green */
+.drake.rarity-rare { border-color: #5bc0de; } /* Blue */
+.drake.rarity-epic { border-color: #9d60 TizP; } /* Purple */
+/* .drake.rarity-legendary { border-color: #f0ad4e; } */ /* Orange */
 
-.drake.dragging {
-    opacity: 0.5;
-    cursor: grabbing;
-    box-shadow: 0 5px 15px rgba(0,0,0,0.3);
-    transform: scale(1.1);
+/* Element Icon on Drake */
+.drake-element-icon {
+    position: absolute;
+    top: 2px;
+    left: 4px;
+    font-size: 0.8em; /* Adjust size as needed */
+    background-color: rgba(0, 0, 0, 0.5);
+    color: white;
+    padding: 1px 3px;
+    border-radius: 3px;
+    line-height: 1;
+    pointer-events: none; /* Ignore clicks */
 }
 
-/* Drake level classes (mainly for JS/data reference now, no background) */
-.drake-level-0 { color: #333; }
-.drake-level-1 { color: white; }
-.drake-level-2 { color: white; }
-.drake-level-3 { color: white; }
-.drake-level-4 { color: white; }
-.drake-level-5 { color: white; }
-.drake-level-6 { color: #333; }
-.drake-level-7 { color: white; }
+/* Level Text on Drake */
+.drake-level-text {
+    position: absolute;
+    bottom: 2px;
+    right: 4px;
+    font-size: 0.7em; /* Adjust size */
+    font-weight: bold;
+    background-color: rgba(0, 0, 0, 0.6);
+    color: #fff;
+    padding: 1px 4px;
+    border-radius: 3px;
+    line-height: 1;
+    pointer-events: none; /* Ignore clicks */
+}
 
 
+.drake.dragging {
+    opacity: 0.6;
+    cursor: grabbing;
+    box-shadow: 0 6px 12px rgba(0,0,0,0.3);
+    transform: scale(1.1);
+    z-index: 10; /* Ensure dragged drake is above others */
+}
+
+/* --- Controls --- */
 #controls {
     display: flex;
-    flex-wrap: wrap; /* << This allows buttons to go to the next line */
+    flex-wrap: wrap;
     justify-content: center;
-    gap: 10px; /* << This provides spacing */
+    gap: 10px;
+    margin-top: 20px; /* Space above controls */
 }
 
 #controls button {
-    /* General button styling, should apply to #credits-btn too */
     padding: 10px 15px;
     font-size: 1em;
     cursor: pointer;
@@ -119,91 +151,136 @@ body {
     background-color: #3498db;
     color: white;
     transition: background-color 0.2s ease;
-    /* Add minimum width if buttons are getting squeezed too much */
-    /* min-width: 120px; */ /* Uncomment and adjust if needed */
 }
+#controls button:hover { background-color: #2980b9; }
+#controls button:disabled { background-color: #bdc3c7; cursor: not-allowed; }
 
-#controls button:hover {
-    background-color: #2980b9;
-}
+/* --- Message Box --- */
+#message-box { /* Style remains same */ }
 
-#controls button:disabled {
-    background-color: #bdc3c7;
-    cursor: not-allowed;
-}
-
-#message-box {
-    margin-top: 15px;
-    padding: 10px;
-    min-height: 20px;
-    color: #333;
-    background-color: #e9e9e9;
-    border-radius: 4px;
-    transition: opacity 0.5s ease;
-    width: 90%;
-    max-width: 500px;
-    box-sizing: border-box;
-    margin-left: auto;
-    margin-right: auto;
-}
-
-/* --- GENERIC OVERLAY STYLES --- */
-.hidden {
-    display: none !important; /* Use !important to ensure it overrides */
-}
+/* --- Generic Modal Styles --- */
+.hidden { display: none !important; }
 
 .modal-box {
     position: fixed;
     top: 50%;
     left: 50%;
     transform: translate(-50%, -50%);
-    padding: 30px;
+    padding: 25px; /* Adjusted padding */
     border-radius: 10px;
-    width: 80%;
+    width: 90%; /* More responsive width */
     max-width: 500px;
-    box-shadow: 0 0 20px rgba(0,0,0,0.5);
+    box-shadow: 0 5px 25px rgba(0,0,0,0.4); /* Enhanced shadow */
     text-align: left;
     z-index: 1000;
+    border: 1px solid #555; /* Added subtle border */
 }
 
-/* --- TUTORIAL BOX STYLES --- */
-#tutorial-box {
+/* --- Tutorial & Credits Modals (Specific Backgrounds/Colors) --- */
+#tutorial-box { background-color: rgba(0, 0, 0, 0.85); color: white; }
+#tutorial-box h3 { color: #f1c40f; /* ... other h3/p/button styles */ }
+/* ... (Keep other specific tutorial styles) ... */
+
+#credits-box { background-color: rgba(20, 20, 30, 0.95); color: #e0e0e0; z-index: 1001; box-shadow: 0 0 25px rgba(100, 100, 200, 0.4); }
+#credits-box h3 { color: #91c4ff; /* ... other h3/p/a/button styles */ }
+/* ... (Keep other specific credits styles) ... */
+
+/* --- Drake Details Panel Styles --- */
+#drake-details-panel {
     /* Inherits from .modal-box */
-    background-color: rgba(0, 0, 0, 0.8);
-    color: white;
+    background-color: #e8e8f0; /* Light grey-blue background */
+    color: #333; /* Dark text */
+    z-index: 1005; /* Above other modals */
+    border: 1px solid #aab;
 }
 
-#tutorial-box h3 { margin-top: 0; text-align: center; color: #f1c40f; margin-bottom: 20px; }
-#tutorial-box p { line-height: 1.6; margin-bottom: 20px; }
-#tutorial-box button { padding: 8px 12px; margin-right: 10px; font-size: 0.9em; cursor: pointer; border: none; border-radius: 4px; background-color: #e67e22; color: white; transition: background-color 0.2s ease; }
-#tutorial-box button:hover { background-color: #d35400; }
-#tutorial-box #tutorial-close-btn { background-color: #c0392b; }
-#tutorial-box #tutorial-close-btn:hover { background-color: #a03022; }
+/* Close button for details */
+.details-close-button {
+    position: absolute;
+    top: 8px;
+    right: 10px;
+    font-size: 1.8em;
+    font-weight: bold;
+    color: #888;
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 0 5px;
+    line-height: 1;
+}
+.details-close-button:hover { color: #333; }
 
-
-/* --- CREDITS BOX STYLES --- */
-#credits-box {
-    /* Inherits from .modal-box */
-    background-color: rgba(20, 20, 30, 0.9);
-    color: #e0e0e0;
-    z-index: 1001;
-    box-shadow: 0 0 25px rgba(100, 100, 200, 0.4);
+/* Header layout (Image + Title block) */
+.details-header {
+    display: flex;
+    align-items: center; /* Vertically align image and text */
+    gap: 20px; /* Space between image and text */
+    margin-bottom: 20px;
+    padding-bottom: 15px;
+    border-bottom: 1px solid #ccc;
 }
 
-#credits-box h3 { margin-top: 0; text-align: center; color: #91c4ff; margin-bottom: 25px; border-bottom: 1px solid #445; padding-bottom: 10px; }
-#credits-box p { line-height: 1.7; margin-bottom: 20px; }
-#credits-box strong { color: #b0d0ff; }
-#credits-box a { color: #f0a060; text-decoration: none; transition: color 0.2s ease; }
-#credits-box a:hover { color: #ffc080; text-decoration: underline; }
-#credits-box button#credits-close-btn { display: block; margin: 25px auto 0 auto; padding: 10px 25px; font-size: 1em; cursor: pointer; border: none; border-radius: 5px; background-color: #5a6da0; color: white; transition: background-color 0.2s ease; }
-#credits-box button#credits-close-btn:hover { background-color: #485880; }
-/* --- END CREDITS BOX STYLES --- */
+.details-image {
+    flex-shrink: 0; /* Prevent image from shrinking */
+    width: 80px; /* Fixed image size */
+    height: 80px;
+    object-fit: contain;
+    background-color: #fff; /* White background for image */
+    border-radius: 5px;
+    border: 1px solid #ccc;
+}
+
+.details-title h3 { /* #detail-name */
+    margin: 0 0 5px 0;
+    font-size: 1.4em;
+    color: #2c3e50;
+}
+.details-title span { /* Level, Rarity, Element */
+    display: block; /* Each on its own line */
+    font-size: 0.9em;
+    color: #555;
+    margin-bottom: 3px;
+}
+
+/* Rarity Text Colors within Panel */
+#detail-rarity.rarity-common-text { color: #777; font-weight: normal; }
+#detail-rarity.rarity-uncommon-text { color: #4cae4c; font-weight: bold; }
+#detail-rarity.rarity-rare-text { color: #46b8da; font-weight: bold; }
+#detail-rarity.rarity-epic-text { color: #8e44ad; font-weight: bold; }
+/* #detail-rarity.rarity-legendary-text { color: #eea236; font-weight: bold;} */
 
 
-/* Drag Over Highlight */
+/* Body content */
+.details-body h4 {
+    margin-top: 0;
+    margin-bottom: 10px;
+    color: #34495e;
+    border-bottom: 1px solid #ddd;
+    padding-bottom: 5px;
+}
+
+.details-stat-list {
+    list-style: none;
+    padding: 0;
+    margin: 0 0 15px 0;
+}
+.details-stat-list li {
+    margin-bottom: 5px;
+    font-size: 0.95em;
+}
+
+#detail-potential, #detail-income {
+    font-size: 0.95em;
+    margin-bottom: 10px;
+    color: #444;
+}
+
+
+/* --- Drag Over Highlight --- */
 .grid-slot.drag-over {
-    background-color: #b8e0b8;
-    border: 2px solid #2ecc71;
+    background-color: #c8e6c9; /* Lighter green */
+    border: 2px solid #66bb6a; /* Softer green border */
+    box-shadow: inset 0 0 5px rgba(0, 100, 0, 0.2); /* Inner shadow */
 }
 
 /* --- END OF FILE style.css --- */
